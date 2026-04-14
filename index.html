@@ -2153,7 +2153,7 @@ nav.closing + .backdrop, nav.open + .backdrop,
 // ═══════════════════════════════════════════════════════════════
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD1ElccdzrwPwKDmGimitEkQEwNMrUeHyE",
@@ -2167,7 +2167,7 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getDatabase(app);
+const db = getFirestore(app);
 
 // ═══════════════════════════════════════════════════════════════
 // STATE
@@ -2182,8 +2182,8 @@ setTimeout(()=>document.querySelectorAll('.widget--entering').forEach(w=>w.class
 // If user is already logged in, show dashboard button in nav
 onAuthStateChanged(auth, async (fbUser) => {
   if(fbUser){
-    const snap = await get(ref(db,`users/${fbUser.uid}`));
-    _me = snap.exists() ? snap.val() : null;
+    const snap = await getDoc(doc(db,'users',fbUser.uid));
+    _me = snap.exists() ? snap.data() : null;
   } else {
     _me = null;
   }
@@ -2192,7 +2192,7 @@ onAuthStateChanged(auth, async (fbUser) => {
 
 // Seed demo creators into Firebase once
 async function seedDemo(){
-  const snap = await get(ref(db,'_seeded'));
+  const snap = await getDoc(doc(db,'_meta','seeded'));
   if(snap.exists()) return;
   const creators = [
     {userId:'d1',name:'Arjun Mehra',profilePhoto:'',bio:'Tech & SaaS creator helping founders grow. Worked with 30+ startups on content strategy.',niches:['Tech','SaaS','Startup'],instagram:'@arjunmehra',youtube:'@arjunmehra',linkedin:'linkedin.com/in/arjun',twitter:'@arjun_m',audienceSize:'50K-100K',engagementRate:'6.2%',pastCollabs:['Notion','Linear'],pricing:'From ₹8,000',whatsapp:'919876543210',featured:true,topSearch:true,createdAt:'2024-01-01'},
@@ -2201,8 +2201,8 @@ async function seedDemo(){
     {userId:'d4',name:'Sneha Patel',profilePhoto:'',bio:'Lifestyle & health creator with a loyal community of 200K+ followers across platforms.',niches:['Lifestyle','Health'],instagram:'@snehawellness',youtube:'@snehapatel',audienceSize:'100K-500K',engagementRate:'5.1%',pastCollabs:['Mamaearth','The Whole Truth'],pricing:'From ₹20,000',whatsapp:'919876543213',featured:true,topSearch:false,createdAt:'2024-01-04'},
     {userId:'d5',name:'Karan Verma',profilePhoto:'',bio:'Startup & entrepreneurship content. Sharing founder journeys, growth hacks, and product teardowns.',niches:['Startup','Business','Marketing'],instagram:'@karanstartup',audienceSize:'1K-10K',engagementRate:'12%',pastCollabs:['Product Hunt'],pricing:'From ₹5,000',whatsapp:'919876543214',featured:false,topSearch:false,createdAt:'2024-01-05'},
   ];
-  for(const c of creators) await set(ref(db,`creators/${c.userId}`), c);
-  await set(ref(db,'_seeded'), true);
+  for(const c of creators) await setDoc(doc(db,'creators',c.userId), c);
+  await setDoc(doc(db,'_meta','seeded'), {at: new Date().toISOString()});
 }
 seedDemo();
 
@@ -2306,7 +2306,7 @@ async function handleAuth(e){
       const cred = await createUserWithEmailAndPassword(auth,email,pass);
       const uid = cred.user.uid;
       const user = {uid,email,name,whatsapp:wa,userType:_curUT,createdAt:new Date().toISOString(),plan:'free',profileComplete:false};
-      await set(ref(db,`users/${uid}`), user);
+      await setDoc(doc(db,'users',uid), user);
       window.location.href='posthire_dashboard_1_2.html';
     }catch(ex){
       btn.innerHTML='<span id="auth-btn-txt">Create account</span>';btn.disabled=false;
