@@ -309,7 +309,7 @@ tr:last-child td{border-bottom:none;}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut as fbSignOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getDatabase, ref, get, set, update, remove, push, onValue, off } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, addDoc, query, orderBy, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // ═══════════════════════════════════════════════
 // FIREBASE
@@ -324,7 +324,7 @@ const fbApp = initializeApp({
   appId:"1:898539356038:web:825b16fcd7f037d1333607"
 });
 const auth = getAuth(fbApp);
-const db = getDatabase(fbApp);
+const db = getFirestore(fbApp);
 
 // ADMIN EMAILS — add yours here
 const ADMIN_EMAILS = ['admin@posthire.in','shiva@posthire.in'];
@@ -389,13 +389,15 @@ async function adminLogout(){
 async function refreshAll(){
   document.getElementById('refresh-spin').style.display='';
   try{
+    const toObj = snap => { const r={}; snap.forEach(d=>{ r[d.id]=d.data(); }); return r; };
     const [usersSnap,creatorsSnap,foundersSnap,requestsSnap] = await Promise.all([
-      get(ref(db,'users')), get(ref(db,'creators')), get(ref(db,'founders')), get(ref(db,'requests'))
+      getDocs(collection(db,'users')), getDocs(collection(db,'creators')),
+      getDocs(collection(db,'founders')), getDocs(collection(db,'requests'))
     ]);
-    _data.users = usersSnap.exists() ? usersSnap.val() : {};
-    _data.creators = creatorsSnap.exists() ? creatorsSnap.val() : {};
-    _data.founders = foundersSnap.exists() ? foundersSnap.val() : {};
-    _data.requests = requestsSnap.exists() ? requestsSnap.val() : {};
+    _data.users    = toObj(usersSnap);
+    _data.creators = toObj(creatorsSnap);
+    _data.founders = toObj(foundersSnap);
+    _data.requests = toObj(requestsSnap);
     updateCounts();
     document.getElementById('refresh-time').textContent = 'Updated '+new Date().toLocaleTimeString();
   }catch(e){ toast('Failed to load data: '+e.message,'error'); }
@@ -1095,7 +1097,7 @@ async function loadBroadcastHistory(){
   const el=document.getElementById('broadcast-history');
   if(!el) return;
   try{
-    const snap=await get(ref(db,'admin_broadcasts'));
+    const snap=await getDocs(collection(db,'admin_broadcasts'));
     if(!snap.exists()){el.innerHTML='<div class="empty"><i class="fas fa-bullhorn"></i><p>No broadcasts sent yet</p></div>';return;}
     const broadcasts=Object.entries(snap.val()).sort((a,b)=>new Date(b[1].sentAt||0)-new Date(a[1].sentAt||0));
     el.innerHTML=broadcasts.map(([id,b])=>`
@@ -1112,8 +1114,8 @@ async function sendBroadcast(){
   const body=document.getElementById('bc-body')?.value.trim();
   const target=document.getElementById('bc-target')?.value;
   if(!title||!body){toast('Please fill title and message','error');return;}
-  const r=push(ref(db,'admin_broadcasts'));
-  await set(r,{title,body,target,type:document.getElementById('bc-type')?.value||'info',sentAt:new Date().toISOString(),sentBy:_admin?.email,id:r.key});
+  const r=await addDoc(collection(db,'admin_broadcasts'),{title,body,target,type:document.getElementById('bc-type')?.value||'info',sentAt:new Date().toISOString(),sentBy:_admin?.email});
+  await updateDoc(r,{id:r.id});
   toast(`Broadcast saved! Would reach ${document.getElementById('bc-count')?.textContent||'—'} users`,'success');
   addLog('broadcast',`Broadcast sent: "${title}" to ${target}`);
   loadBroadcastHistory();
@@ -1206,7 +1208,7 @@ function renderSettings(el){
 
 async function loadPlatformSettings(){
   try{
-    const snap=await get(ref(db,'admin_settings'));
+    const snap=await getDoc(doc(db,'admin_settings','config'));
     if(!snap.exists()) return;
     const s=snap.val();
     if(document.getElementById('setting-maintenance')) document.getElementById('setting-maintenance').checked=!!s.maintenance;
@@ -1217,7 +1219,7 @@ async function loadPlatformSettings(){
 }
 
 async function saveSetting(key,val){
-  await update(ref(db,'admin_settings'),{[key]:val});
+  await updateDoc(doc(db,'admin_settings','config'),{[key]:val});
   toast(`Setting "${key}" saved`,'success');
   addLog('system',`Setting updated: ${key} = ${val}`);
 }
@@ -1282,7 +1284,7 @@ function editUser(uid){
 
 async function saveEditUser(uid){
   const updates={name:document.getElementById('eu-name')?.value.trim(),whatsapp:document.getElementById('eu-wa')?.value.trim(),userType:document.getElementById('eu-type')?.value,plan:document.getElementById('eu-plan')?.value,profileComplete:document.getElementById('eu-complete')?.checked};
-  await update(ref(db,`users/${uid}`),updates);
+  await updateDoc(doc(db,'users',uid),updates);
   _data.users[uid]={..._data.users[uid],...updates};
   closeModal('edit-user-modal');
   toast(`User ${updates.name||uid} updated`,'success');
@@ -1307,7 +1309,7 @@ function changePlan(uid,currentPlan){
 }
 
 async function adminChangePlanDirect(uid,plan){
-  await update(ref(db,`users/${uid}`),{plan});
+  await updateDoc(doc(db,'users',uid),{plan});
   if(_data.users[uid]) _data.users[uid].plan=plan;
   toast(`Plan changed to ${plan.toUpperCase()}`,'success');
   addLog('user',`Plan changed for ${_data.users[uid]?.name||uid}: ${plan}`);
@@ -1318,7 +1320,7 @@ async function adminChangePlanDirect(uid,plan){
 
 function deleteUser(uid,name){
   showConfirm(`Delete "${name}"?`,`This will permanently delete the user account, their profile, and all associated data. This CANNOT be undone.`,async()=>{
-    await Promise.all([remove(ref(db,`users/${uid}`)),remove(ref(db,`creators/${uid}`)),remove(ref(db,`founders/${uid}`))]);
+    await Promise.all([deleteDoc(doc(db,'users',uid)),deleteDoc(doc(db,'creators',uid)),deleteDoc(doc(db,'founders',uid))]);
     delete _data.users[uid];delete _data.creators[uid];delete _data.founders[uid];
     toast(`User "${name}" deleted`,'success');
     addLog('user',`Deleted user: ${name} (${uid})`);
@@ -1331,7 +1333,7 @@ function deleteUser(uid,name){
 // CREATOR ACTIONS
 // ═══════════════════════════════════════════════
 async function toggleCreatorField(uid,field,val){
-  await update(ref(db,`creators/${uid}`),{[field]:val});
+  await updateDoc(doc(db,'creators',uid),{[field]:val});
   if(_data.creators[uid]) _data.creators[uid][field]=val;
   toast(`Creator ${field} ${val?'enabled':'disabled'}`,'success');
   addLog('user',`Creator ${_data.creators[uid]?.name||uid}: ${field}=${val}`);
@@ -1373,7 +1375,7 @@ function editCreator(uid){
 async function saveEditCreator(uid){
   const niches=[...document.querySelectorAll('#edit-creator-form [data-n]')].filter(el=>el.dataset.active==='1').map(el=>el.dataset.n);
   const updates={name:document.getElementById('ec-name')?.value.trim(),bio:document.getElementById('ec-bio')?.value.trim(),niches,audienceSize:document.getElementById('ec-aud')?.value,engagementRate:document.getElementById('ec-er')?.value.trim(),pricing:document.getElementById('ec-price')?.value.trim(),whatsapp:document.getElementById('ec-wa')?.value.trim(),featured:document.getElementById('ec-feat')?.checked,topSearch:document.getElementById('ec-top')?.checked};
-  await update(ref(db,`creators/${uid}`),updates);
+  await updateDoc(doc(db,'creators',uid),updates);
   _data.creators[uid]={..._data.creators[uid],...updates};
   closeModal('edit-creator-modal');
   toast('Creator updated','success');
@@ -1382,7 +1384,7 @@ async function saveEditCreator(uid){
 
 function deleteCreator(uid,name){
   showConfirm(`Delete creator "${name}"?`,'This will remove their creator profile. The user account will remain.',async()=>{
-    await remove(ref(db,`creators/${uid}`));
+    await deleteDoc(doc(db,'creators',uid));
     delete _data.creators[uid];
     toast(`Creator "${name}" deleted`,'success');
     addLog('user',`Deleted creator: ${name}`);
@@ -1394,7 +1396,7 @@ function deleteCreator(uid,name){
 // REQUEST ACTIONS
 // ═══════════════════════════════════════════════
 async function updateReqStatus(id,status){
-  await update(ref(db,`requests/${id}`),{status});
+  await updateDoc(doc(db,'requests',id),{status});
   if(_data.requests[id]) _data.requests[id].status=status;
   toast(`Request ${status}`,'success');
   addLog('system',`Request ${id} marked as ${status}`);
@@ -1404,7 +1406,7 @@ async function updateReqStatus(id,status){
 
 function deleteRequest(id){
   showConfirm('Delete this request?','This will permanently remove the collaboration request.',async()=>{
-    await remove(ref(db,`requests/${id}`));
+    await deleteDoc(doc(db,'requests',id));
     delete _data.requests[id];
     toast('Request deleted','success');
     addLog('system',`Deleted request: ${id}`);
@@ -1417,9 +1419,9 @@ function deleteRequest(id){
 // ═══════════════════════════════════════════════
 function clearAllFeatured(){
   showConfirm('Clear all featured creators?','This will remove the Featured badge from all creators.',async()=>{
-    const updates={};
-    Object.keys(_data.creators).forEach(uid=>{ updates[`creators/${uid}/featured`]=false; _data.creators[uid].featured=false; });
-    await update(ref(db),updates);
+    const batch=writeBatch(db);
+    Object.keys(_data.creators).forEach(uid=>{ batch.update(doc(db,'creators',uid),{featured:false}); _data.creators[uid].featured=false; });
+    await batch.commit();
     toast('All featured cleared','success');
     addLog('system','Cleared all featured creators');
     showPage('featured');
@@ -1427,9 +1429,9 @@ function clearAllFeatured(){
 }
 function clearAllTopSearch(){
   showConfirm('Clear all top search creators?','This will reset the top search ordering for all creators.',async()=>{
-    const updates={};
-    Object.keys(_data.creators).forEach(uid=>{ updates[`creators/${uid}/topSearch`]=false; _data.creators[uid].topSearch=false; });
-    await update(ref(db),updates);
+    const batch=writeBatch(db);
+    Object.keys(_data.creators).forEach(uid=>{ batch.update(doc(db,'creators',uid),{topSearch:false}); _data.creators[uid].topSearch=false; });
+    await batch.commit();
     toast('All top search cleared','success');
     addLog('system','Cleared all top search creators');
     showPage('featured');
@@ -1452,7 +1454,7 @@ function exportData(){
 
 async function reseedDemo(){
   showConfirm('Re-seed demo creators?','This will reset the seeded flag so demo creators get re-added on next page load.',async()=>{
-    await remove(ref(db,'_seeded'));
+    await deleteDoc(doc(db,'_meta','seeded'));
     toast('Demo seed flag cleared. Refresh the main dashboard to re-seed.','info');
   },'seedling','btn-warning');
 }
@@ -1460,7 +1462,7 @@ async function reseedDemo(){
 function resetDemoData(){
   showConfirm('Reset demo data?','This will delete all demo creators (d1-d6) and clear the seed flag.',async()=>{
     const demoIds=['d1','d2','d3','d4','d5','d6'];
-    await Promise.all([...demoIds.map(id=>remove(ref(db,`creators/${id}`))),remove(ref(db,'_seeded'))]);
+    await Promise.all([...demoIds.map(id=>deleteDoc(doc(db,'creators',id))),deleteDoc(doc(db,'_meta','seeded'))]);
     demoIds.forEach(id=>delete _data.creators[id]);
     toast('Demo data reset!','success');
     addLog('system','Demo data reset');
@@ -1470,7 +1472,10 @@ function resetDemoData(){
 
 function dangerDeleteAll(collection,label){
   showConfirm(`Delete ALL ${label}?`,`This will permanently delete ALL records from the ${collection} collection. This CANNOT be undone.`,async()=>{
-    await remove(ref(db,collection));
+    const snap=await getDocs(collection(db,collection));
+    const batch=writeBatch(db);
+    snap.forEach(d=>batch.delete(d.ref));
+    await batch.commit();
     _data[collection]={};
     toast(`All ${label} deleted`,'error');
     addLog('system',`DANGER: Deleted all ${collection}`);
