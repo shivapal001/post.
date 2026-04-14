@@ -386,7 +386,7 @@ input,select,textarea{font-family:'DM Sans',sans-serif;}
 // ══════════════════════════════════════════════════════
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signOut as fbSignOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getDatabase, ref, get, set, update, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const fbConfig = {
   apiKey:"AIzaSyD1ElccdzrwPwKDmGimitEkQEwNMrUeHyE",
@@ -399,25 +399,59 @@ const fbConfig = {
 };
 const fbApp = initializeApp(fbConfig);
 const auth = getAuth(fbApp);
-const db = getDatabase(fbApp);
+const db = getFirestore(fbApp);
 
 // ══════════════════════════════════════════════════════
 // DB HELPERS
 // ══════════════════════════════════════════════════════
 const DB = {
-  async getUser(uid){ const s=await get(ref(db,`users/${uid}`)); return s.exists()?s.val():null; },
-  async setUser(uid,d){ await set(ref(db,`users/${uid}`),d); },
-  async updateUser(uid,d){ await update(ref(db,`users/${uid}`),d); },
-  async getCreator(uid){ const s=await get(ref(db,`creators/${uid}`)); return s.exists()?s.val():null; },
-  async setCreator(uid,d){ await set(ref(db,`creators/${uid}`),d); },
-  async getCreators(){ const s=await get(ref(db,'creators')); return s.exists()?s.val():{}; },
-  async getFounder(uid){ const s=await get(ref(db,`founders/${uid}`)); return s.exists()?s.val():null; },
-  async setFounder(uid,d){ await set(ref(db,`founders/${uid}`),d); },
-  async getRequests(){ const s=await get(ref(db,'requests')); return s.exists()?s.val():{}; },
-  async saveRequest(d){ const r=push(ref(db,'requests')); await set(r,{...d,id:r.key}); return r.key; },
-  async updateRequest(id,patch){ await update(ref(db,`requests/${id}`),patch); },
+  async getUser(uid){
+    const s = await getDoc(doc(db,'users',uid));
+    return s.exists() ? s.data() : null;
+  },
+  async setUser(uid,d){
+    await setDoc(doc(db,'users',uid), d);
+  },
+  async updateUser(uid,d){
+    await updateDoc(doc(db,'users',uid), d);
+  },
+  async getCreator(uid){
+    const s = await getDoc(doc(db,'creators',uid));
+    return s.exists() ? s.data() : null;
+  },
+  async setCreator(uid,d){
+    await setDoc(doc(db,'creators',uid), d);
+  },
+  async getCreators(){
+    const snap = await getDocs(collection(db,'creators'));
+    const result = {};
+    snap.forEach(d => { result[d.id] = d.data(); });
+    return result;
+  },
+  async getFounder(uid){
+    const s = await getDoc(doc(db,'founders',uid));
+    return s.exists() ? s.data() : null;
+  },
+  async setFounder(uid,d){
+    await setDoc(doc(db,'founders',uid), d);
+  },
+  async getRequests(){
+    const snap = await getDocs(collection(db,'requests'));
+    const result = {};
+    snap.forEach(d => { result[d.id] = d.data(); });
+    return result;
+  },
+  async saveRequest(d){
+    const ref = await addDoc(collection(db,'requests'), d);
+    await updateDoc(ref, {id: ref.id});
+    return ref.id;
+  },
+  async updateRequest(id,patch){
+    await updateDoc(doc(db,'requests',id), patch);
+  },
   async seedDemoCreators(){
-    const s=await get(ref(db,'_seeded')); if(s.exists()) return;
+    const s = await getDoc(doc(db,'_meta','seeded'));
+    if(s.exists()) return;
     const creators=[
       {userId:'d1',name:'Arjun Mehra',profilePhoto:'',bio:'Tech & SaaS creator helping founders grow. Worked with 30+ startups on product launches and content strategy.',niches:['Tech','SaaS','Startup'],instagram:'@arjunmehra',youtube:'@arjunmehra',linkedin:'linkedin.com/in/arjun',audienceSize:'50K-100K',engagementRate:'6.2%',pastCollabs:['Notion','Linear'],pricing:'From ₹8,000',whatsapp:'919876543210',featured:true,topSearch:true,createdAt:'2024-01-01'},
       {userId:'d2',name:'Priya Kapoor',profilePhoto:'',bio:'Finance & investment content for millennials. Helping brands reach young India with authentic storytelling and data-driven campaigns.',niches:['Finance','Business'],instagram:'@priyafinance',youtube:'@priyakapoor',audienceSize:'100K-500K',engagementRate:'4.8%',pastCollabs:['Zerodha','CoinSwitch'],pricing:'From ₹15,000',whatsapp:'919876543211',featured:false,topSearch:false,createdAt:'2024-01-02'},
@@ -426,8 +460,8 @@ const DB = {
       {userId:'d5',name:'Karan Verma',profilePhoto:'',bio:'Startup & entrepreneurship content creator. Sharing founder journeys, growth hacks, and product teardowns for the Indian startup ecosystem.',niches:['Startup','Business','Marketing'],instagram:'@karanstartup',audienceSize:'1K-10K',engagementRate:'12%',pastCollabs:['Product Hunt'],pricing:'From ₹3,000',whatsapp:'919876543214',featured:false,topSearch:false,createdAt:'2024-01-05'},
       {userId:'d6',name:'Divya Sharma',profilePhoto:'',bio:'EdTech & career content creator. Helping students navigate competitive exams, placements, and career growth.',niches:['Education','Marketing'],instagram:'@divyacareers',youtube:'@divyasharma',audienceSize:'50K-100K',engagementRate:'7.3%',pastCollabs:['Unacademy','Internshala'],pricing:'From ₹10,000',whatsapp:'919876543215',featured:false,topSearch:true,createdAt:'2024-01-06'},
     ];
-    for(const c of creators) await set(ref(db,`creators/${c.userId}`),c);
-    await set(ref(db,'_seeded'),true);
+    for(const c of creators) await setDoc(doc(db,'creators',c.userId), c);
+    await setDoc(doc(db,'_meta','seeded'), {at: new Date().toISOString()});
   }
 };
 
